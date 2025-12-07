@@ -1,0 +1,112 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>AI Receptionist (Demo)</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 2rem; }
+    #log { border: 1px solid #ddd; padding: 1rem; height: 250px; overflow: auto; }
+    button { margin-right: .5rem; }
+  </style>
+</head>
+<body>
+  <h1>AI Receptionist (Demo)</h1>
+  <p>Click Start, speak naturally, then click Stop. The assistant will reply aloud.</p>
+
+  <div>
+    <button id="startBtn">Start</button>
+    <button id="stopBtn" disabled>Stop</button>
+  </div>
+
+  <div id="log"></div>
+
+  <script>
+    const startBtn = document.getElementById('startBtn');
+    const stopBtn = document.getElementById('stopBtn');
+    const log = document.getElementById('log');
+
+    let recognition;
+    let listening = false;
+    let context = [];
+
+    function addLog(role, text) {
+      const el = document.createElement('div');
+      el.innerHTML = '<strong>' + role + ':</strong> ' + text;
+      log.appendChild(el);
+      log.scrollTop = log.scrollHeight;
+    }
+
+    if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
+      addLog('system', 'Web Speech API not supported in this browser. Try Chrome.');
+      startBtn.disabled = true;
+    } else {
+      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+      recognition = new SpeechRecognition();
+      recognition.lang = 'en-US';
+      recognition.interimResults = false;
+      recognition.maxAlternatives = 1;
+      recognition.continuous = false;
+
+      recognition.onresult = (event) => {
+        const text = event.results[0][0].transcript;
+        addLog('user', text);
+        sendToServer(text);
+      };
+
+      recognition.onerror = (e) => {
+        addLog('system', 'Speech recognition error: ' + e.error);
+      };
+
+      recognition.onend = () => {
+        listening = false;
+        startBtn.disabled = false;
+        stopBtn.disabled = true;
+      };
+    }
+
+    startBtn.onclick = () => {
+      if (recognition) {
+        listening = true;
+        recognition.start();
+        startBtn.disabled = true;
+        stopBtn.disabled = false;
+        addLog('system', 'Listening...');
+      }
+    };
+
+    stopBtn.onclick = () => {
+      if (recognition && listening) {
+        recognition.stop();
+        listening = false;
+        startBtn.disabled = false;
+        stopBtn.disabled = true;
+        addLog('system', 'Stopped listening.');
+      }
+    };
+
+    async function sendToServer(message) {
+      try {
+        const resp = await fetch('/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ message, context })
+        });
+        const data = await resp.json();
+        const reply = data.reply || 'No reply';
+        addLog('assistant', reply);
+        // Append to context for short-term memory
+        context.push({ role: 'user', content: message });
+        context.push({ role: 'assistant', content: reply });
+
+        // Speak reply using Web Speech Synthesis
+        const utter = new SpeechSynthesisUtterance(reply);
+        utter.lang = 'en-US';
+        speechSynthesis.cancel();
+        speechSynthesis.speak(utter);
+      } catch (err) {
+        addLog('system', 'Error contacting server: ' + err.message);
+      }
+    }
+  </script>
+</body>
+</html>
